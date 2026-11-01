@@ -1,0 +1,93 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- 설정
+local TOGGLE_KEY = Enum.KeyCode.Zero -- 0번 키로 ON/OFF
+local MAX_DISTANCE = 500              -- 최대 감지 거리 (Studs)
+
+local isEnabled = false
+
+-- 알림 표시
+local function notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 1.5
+        })
+    end)
+end
+
+-- 가장 가까운 플레이어의 머리(Head) 찾기
+local function getClosestPlayerHead()
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local myPos = myChar.HumanoidRootPart.Position
+    local closestHead = nil
+    local shortestDist = MAX_DISTANCE
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local head = char:FindFirstChild("Head")
+
+            if hum and hum.Health > 0 and head then
+                local dist = (head.Position - myPos).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    closestHead = head
+                end
+            end
+        end
+    end
+
+    return closestHead
+end
+
+-- 0번 키 ON / OFF 스위치
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    if input.KeyCode == TOGGLE_KEY then
+        isEnabled = not isEnabled
+        if isEnabled then
+            notify("Silent Aim", "판정 고정 기능 [ ON ]")
+        else
+            notify("Silent Aim", "판정 고정 기능 [ OFF ]")
+        end
+    end
+end)
+
+-- Metatable Hooking / Mouse.Hit 변조 원리 (개념 및 적용)
+-- 게임에서 마우스 위치(Mouse.Hit, Mouse.Target)를 참조할 때 타겟의 위치로 바꿔치기합니다.
+local rawMetatable = getrawmetatable and getrawmetatable(game) or setmetatable({}, {__index = game})
+if setreadonly then setreadonly(rawMetatable, false) end
+
+local oldIndex = rawMetatable.__index
+
+rawMetatable.__index = newcclosure(function(self, index)
+    if isEnabled and self == Mouse then
+        local targetHead = getClosestPlayerHead()
+        if targetHead then
+            if index == "Hit" then
+                -- 내 마우스/에임 위치를 강제로 타겟 머리의 CFrame 좌표로 반환
+                return targetHead.CFrame
+            elseif index == "Target" then
+                -- 마우스가 가리키는 오브젝트를 타겟 부위로 반환
+                return targetHead
+            end
+        end
+    end
+    return oldIndex(self, index)
+end)
+
+if setreadonly then setreadonly(rawMetatable, true) end
